@@ -4,8 +4,10 @@
 
   let bubbleTimer = null;
   let dragging = false;
+  let feedReady = false;
+  let feedBusy = false;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const gestureClasses = ['reacting', 'wiggling', 'tilting', 'stretching'];
+  const gestureClasses = ['reacting', 'wiggling', 'tilting', 'stretching', 'chewing'];
   let gestureEndTimer = null;
 
   function playGesture(name, durationMs) {
@@ -22,7 +24,7 @@
   }
 
   function blinkOnce(doubleBlink) {
-    if (dragging || document.hidden) {
+    if (dragging || feedReady || feedBusy || document.hidden) {
       scheduleBlink();
       return;
     }
@@ -42,7 +44,8 @@
   function scheduleIdleGesture() {
     if (reducedMotion) return;
     setTimeout(() => {
-      if (!dragging && !document.hidden && !gestureClasses.some((name) => petEl.classList.contains(name))) {
+      if (!dragging && !feedReady && !feedBusy && !document.hidden
+        && !gestureClasses.some((name) => petEl.classList.contains(name))) {
         const gesture = Math.random() < 0.5 ? 'tilting' : 'stretching';
         playGesture(gesture, 1200);
       }
@@ -126,12 +129,7 @@
   const alphaContext = alphaProbe.getContext('2d', { willReadFrequently: true });
   let canReadAlpha = !!alphaContext;
 
-  function isOverInteractiveContent(x, y) {
-    if (bubbleEl.classList.contains('show')) {
-      const bubbleRect = bubbleEl.getBoundingClientRect();
-      if (x >= bubbleRect.left && x < bubbleRect.right
-        && y >= bubbleRect.top && y < bubbleRect.bottom) return true;
-    }
+  function isOverVisiblePet(x, y) {
     for (const img of poseImages) {
       if (Number.parseFloat(getComputedStyle(img).opacity) < 0.08) continue;
       const rect = img.getBoundingClientRect();
@@ -153,6 +151,15 @@
       }
     }
     return false;
+  }
+
+  function isOverInteractiveContent(x, y) {
+    if (bubbleEl.classList.contains('show')) {
+      const bubbleRect = bubbleEl.getBoundingClientRect();
+      if (x >= bubbleRect.left && x < bubbleRect.right
+        && y >= bubbleRect.top && y < bubbleRect.bottom) return true;
+    }
+    return isOverVisiblePet(x, y);
   }
 
   function setMousePassthrough(ignore) {
@@ -183,6 +190,7 @@
   window.petBridge.onCursorPosition((point) => updateMousePassthrough(point.x, point.y));
   window.addEventListener('focus', updateFromSystemCursor);
   window.addEventListener('mouseleave', () => {
+    setFeedReady(false);
     if (!dragging) setMousePassthrough(true);
   });
 
@@ -214,6 +222,78 @@
     window.petBridge.moveWindowBy(dx, dy);
   });
 
+  // 文件只在猫身上松手时投喂；窗口其它区域不触发删除。
+  function hasFileDrag(e) {
+    return e.dataTransfer && (Array.from(e.dataTransfer.types).includes('Files')
+      || e.dataTransfer.files.length > 0);
+  }
+
+  function renderFeedState() {
+    document.body.classList.toggle('feeding', feedReady || feedBusy);
+    petEl.classList.toggle('ready-to-feed', feedReady && !feedBusy);
+    updateFromSystemCursor();
+  }
+
+  function setFeedReady(ready) {
+    if (feedReady === ready) return;
+    feedReady = ready;
+    renderFeedState();
+  }
+
+  window.addEventListener('dragover', (e) => {
+    if (!hasFileDrag(e)) return;
+    e.preventDefault();
+    const ready = !feedBusy && isOverVisiblePet(e.clientX, e.clientY);
+    e.dataTransfer.dropEffect = ready ? 'move' : 'none';
+    setFeedReady(ready);
+  });
+
+  window.addEventListener('dragleave', (e) => {
+    if (e.clientX <= 0 || e.clientY <= 0
+      || e.clientX >= innerWidth - 1 || e.clientY >= innerHeight - 1) {
+      setFeedReady(false);
+    }
+  });
+
+  window.addEventListener('drop', async (e) => {
+    if (!hasFileDrag(e)) return;
+    e.preventDefault();
+    const overPet = feedReady && isOverVisiblePet(e.clientX, e.clientY);
+    const files = Array.from(e.dataTransfer.files);
+    setFeedReady(false);
+    if (!overPet || feedBusy) return;
+    if (files.length !== 1) {
+      petAPI.say('一次只吃一个文件喵。', 2500);
+      return;
+    }
+
+    feedBusy = true;
+    renderFeedState();
+    try {
+      const result = await window.petBridge.feedFile(files[0]);
+      if (result.ok) {
+        playGesture('chewing', 650);
+        petAPI.say('吃掉啦！回收站还能找回。', 3000);
+        setTimeout(() => {
+          feedBusy = false;
+          renderFeedState();
+        }, 650);
+        return;
+      }
+      const messages = {
+        'not-a-file': '文件夹先不吃，文件还在。',
+        'app-file': '我的文件不能吃喵。',
+        'invalid-file': '只吃本地文件喵。',
+      };
+      petAPI.say(messages[result.reason] || '没吃下去，文件还在原处。', 3000);
+    } catch (error) {
+      console.warn('[pet] 投喂失败:', error);
+      petAPI.say('没吃下去，文件还在原处。', 3000);
+    }
+    feedBusy = false;
+    renderFeedState();
+  });
+
   // ---- 插件运行状态 ----
   // 主进程已经把默认值合并进 config.plugins，所以这里直接按配置判断：
   // 只有显式为 true 的插件才运行；未列出的不运行（避免"偷偷在跑却没有开关"）。
@@ -239,6 +319,7 @@
   window.addEventListener('blur', () => {
     dragging = false;
     petEl.classList.remove('dragging');
+    setFeedReady(false);
     updateFromSystemCursor();
   });
 

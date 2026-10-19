@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
@@ -235,6 +235,38 @@ function buildContextMenu() {
 }
 
 ipcMain.handle('get-config', () => config);
+
+ipcMain.handle('feed-file', async (event, filePath) => {
+  if (!win || win.isDestroyed() || event.sender !== win.webContents) {
+    return { ok: false, reason: 'invalid-request' };
+  }
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
+    return { ok: false, reason: 'invalid-file' };
+  }
+
+  const resolved = path.resolve(filePath);
+  const protectedDirs = [app.getAppPath(), app.getPath('userData')];
+  if (app.isPackaged) protectedDirs.push(path.dirname(process.execPath));
+  if (protectedDirs.some((dir) => {
+    const relative = path.relative(dir, resolved);
+    return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep)
+      && !path.isAbsolute(relative));
+  })) {
+    return { ok: false, reason: 'app-file' };
+  }
+
+  try {
+    const info = await fs.promises.lstat(resolved);
+    if (!info.isFile() || info.isSymbolicLink()) {
+      return { ok: false, reason: 'not-a-file' };
+    }
+    await shell.trashItem(resolved);
+    return { ok: true };
+  } catch (error) {
+    console.warn('[pet] 投喂文件失败:', error);
+    return { ok: false, reason: 'trash-failed' };
+  }
+});
 
 function stopCursorPoll() {
   if (cursorPollTimer !== null) {

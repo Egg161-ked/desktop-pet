@@ -54,6 +54,10 @@ html, body {
   animation: stretch 1.15s ease-in-out;
 }
 
+.pet.chewing {
+  animation: chew 0.65s ease-in-out;
+}
+
 .pet.dragging {
   animation: none;
   transform: translateX(-50%) scale(0.94, 1.06);
@@ -98,6 +102,25 @@ body.blinking[data-pose="idle_center"] .blink-center,
 body.blinking[data-pose="idle_left_tilt"] .blink-tilt,
 body.blinking[data-pose="idle_front"] .blink-front { opacity: 1; }
 
+body.feeding .pose { transition-duration: 75ms; }
+body.feeding .pose:not(.pose-mouth-open) { opacity: 0; }
+body.feeding .pose-mouth-open { opacity: 1; }
+
+.pet.ready-to-feed::after {
+  content: "松手送进回收站";
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: var(--bubble-bg);
+  color: var(--bubble-text);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 @keyframes float {
   0%, 100% { transform: translateX(-50%) translateY(0); }
   50%      { transform: translateX(-50%) translateY(-4px); }
@@ -125,6 +148,12 @@ body.blinking[data-pose="idle_front"] .blink-front { opacity: 1; }
   0%, 100% { transform: translateX(-50%) scale(1); }
   24% { transform: translateX(-50%) scale(1.06, 0.94); }
   58% { transform: translateX(-50%) scale(0.96, 1.09) translateY(-3px); }
+}
+
+@keyframes chew {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  22%, 66% { transform: translateX(-50%) scale(1.04, 0.94); }
+  44%, 84% { transform: translateX(-50%) scale(0.98, 1.03); }
 }
 
 @media (prefers-reduced-motion: reduce) {

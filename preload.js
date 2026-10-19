@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('petBridge', {
   getConfig: () => ipcRenderer.invoke('get-config'),
@@ -8,4 +8,8 @@ contextBridge.exposeInMainWorld('petBridge', {
   showContextMenu: () => ipcRenderer.send('show-context-menu'),
   moveWindowBy: (dx, dy) => ipcRenderer.send('move-window-by', { dx, dy }),
   setMousePassthrough: (ignore) => ipcRenderer.send('set-mouse-passthrough', !!ignore),
+  feedFile: (file) => {
+    const filePath = webUtils.getPathForFile(file);
+    return ipcRenderer.invoke('feed-file', filePath);
+  },
 });

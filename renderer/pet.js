@@ -3,6 +3,52 @@
   const bubbleEl = document.getElementById('bubble');
 
   let bubbleTimer = null;
+  let dragging = false;
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const gestureClasses = ['reacting', 'wiggling', 'tilting', 'stretching'];
+  let gestureEndTimer = null;
+
+  function playGesture(name, durationMs) {
+    clearTimeout(gestureEndTimer);
+    petEl.classList.remove(...gestureClasses);
+    void petEl.offsetWidth; // 重播同一个动作时重新开始动画
+    petEl.classList.add(name);
+    gestureEndTimer = setTimeout(() => petEl.classList.remove(name), durationMs);
+  }
+
+  function scheduleBlink() {
+    if (reducedMotion) return;
+    setTimeout(() => blinkOnce(Math.random() < 0.18), 3500 + Math.random() * 3500);
+  }
+
+  function blinkOnce(doubleBlink) {
+    if (dragging || document.hidden) {
+      scheduleBlink();
+      return;
+    }
+    document.body.classList.remove('blink-recover');
+    document.body.classList.add('blinking');
+    setTimeout(() => {
+      document.body.classList.add('blink-recover');
+      document.body.classList.remove('blinking');
+      setTimeout(() => {
+        document.body.classList.remove('blink-recover');
+        if (doubleBlink) setTimeout(() => blinkOnce(false), 180);
+        else scheduleBlink();
+      }, 90);
+    }, 130);
+  }
+
+  function scheduleIdleGesture() {
+    if (reducedMotion) return;
+    setTimeout(() => {
+      if (!dragging && !document.hidden && !gestureClasses.some((name) => petEl.classList.contains(name))) {
+        const gesture = Math.random() < 0.5 ? 'tilting' : 'stretching';
+        playGesture(gesture, 1200);
+      }
+      scheduleIdleGesture();
+    }, 12000 + Math.random() * 8000);
+  }
 
   // ---- 姿态（素材库的 idle_center / idle_front / idle_left_tilt）----
   // idle_center : 默认待机
@@ -60,16 +106,13 @@
     // 手动切到下一个姿态（和"摸一下"等效）
     nextPose,
     react() {
-      petEl.classList.remove('reacting');
-      void petEl.offsetWidth; // 强制重绘以重播动画
-      petEl.classList.add('reacting');
+      playGesture(Math.random() < 0.5 ? 'reacting' : 'wiggling', 650);
     },
     config: null, // 启动后由 main 注入
   };
   window.petAPI = petAPI;
 
   // ---- 拖拽(手动实现,避免和点击手势冲突) ----
-  let dragging = false;
   let lastX = 0, lastY = 0;
   let moved = false;
   let mousePassthrough = null; // Force an initial sync after a renderer reload.
@@ -135,6 +178,8 @@
     moved = false;
     lastX = e.screenX;
     lastY = e.screenY;
+    clearTimeout(gestureEndTimer);
+    petEl.classList.remove(...gestureClasses);
     petEl.classList.add('dragging');
   });
 
@@ -167,7 +212,7 @@
     petEl.classList.remove('dragging');
     updateMousePassthrough(e.clientX, e.clientY);
     if (!moved) {
-      // 视为一次点击（"摸一下"）：挤压弹跳 + 切到下一个姿态
+      // 视为一次点击（"摸一下"）：弹跳或摇摆，并切到下一个姿态
       petAPI.react();
       nextPose();
       // 只触发正在运行的插件（否则被关掉的插件仍会响应点击）
@@ -253,6 +298,8 @@
 
     applyPlugins(config);
     updateFromSystemCursor();
+    scheduleBlink();
+    scheduleIdleGesture();
   }
 
   window.petBridge.onConfigUpdated((config) => {

@@ -35,6 +35,23 @@ html, body {
   cursor: grab;
   /* 轻微上下浮动，让静态素材看起来"活着" */
   animation: float 4.2s ease-in-out infinite;
+  transform-origin: 50% 90%;
+}
+
+.pet.reacting {
+  animation: pop 0.5s ease;
+}
+
+.pet.wiggling {
+  animation: wiggle 0.62s ease-in-out;
+}
+
+.pet.tilting {
+  animation: tilt 1.1s ease-in-out;
+}
+
+.pet.stretching {
+  animation: stretch 1.15s ease-in-out;
 }
 
 .pet.dragging {
@@ -43,11 +60,7 @@ html, body {
   cursor: grabbing;
 }
 
-.pet.reacting {
-  animation: pop 0.5s ease;
-}
-
-/* 三张姿态图叠放在同一位置，底边对齐，用 opacity 切换 */
+/* 姿态图与闭眼帧叠放在同一位置，底边对齐，用 opacity 切换 */
 .pose {
   position: absolute;
   left: 50%;
@@ -75,6 +88,16 @@ body[data-pose="attention"] .pose-tilt { opacity: 1; }
 /* 正面自然待机 */
 body[data-pose="idle_front"] .pose-front { opacity: 1; }
 
+/* 眨眼只替换眼睛帧，姿态和显示尺寸保持不变。 */
+body.blinking .pose { transition-duration: 65ms; }
+body.blink-recover .pose { transition-duration: 65ms; }
+body.blinking[data-pose="idle_center"] .pose-center,
+body.blinking[data-pose="idle_left_tilt"] .pose-tilt,
+body.blinking[data-pose="idle_front"] .pose-front { opacity: 0; }
+body.blinking[data-pose="idle_center"] .blink-center,
+body.blinking[data-pose="idle_left_tilt"] .blink-tilt,
+body.blinking[data-pose="idle_front"] .blink-front { opacity: 1; }
+
 @keyframes float {
   0%, 100% { transform: translateX(-50%) translateY(0); }
   50%      { transform: translateX(-50%) translateY(-4px); }
@@ -84,6 +107,29 @@ body[data-pose="idle_front"] .pose-front { opacity: 1; }
   0%   { transform: translateX(-50%) scale(1); }
   40%  { transform: translateX(-50%) scale(1.1, 0.92); }
   100% { transform: translateX(-50%) scale(1); }
+}
+
+@keyframes wiggle {
+  0%, 100% { transform: translateX(-50%) rotate(0); }
+  20% { transform: translateX(-50%) rotate(-7deg); }
+  45% { transform: translateX(-50%) rotate(6deg); }
+  70% { transform: translateX(-50%) rotate(-3deg); }
+}
+
+@keyframes tilt {
+  0%, 100% { transform: translateX(-50%) rotate(0); }
+  35%, 65% { transform: translateX(-50%) rotate(-6deg); }
+}
+
+@keyframes stretch {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  24% { transform: translateX(-50%) scale(1.06, 0.94); }
+  58% { transform: translateX(-50%) scale(0.96, 1.09) translateY(-3px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet { animation: none !important; }
+  .pose { transition: none !important; }
 }
 
 .bubble {

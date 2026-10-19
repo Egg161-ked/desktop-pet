@@ -13,7 +13,8 @@ npm install
 npm start
 ```
 
-第一次启动会在屏幕右下角出现一只猫。左键拖拽可以移动它,点它会有反应(切到"关注"姿态),
+第一次启动会在屏幕右下角出现一只猫。左键拖拽可以移动它，点击会在三个姿态间切换，
+并随机弹跳或摇摆。它会偶尔眨眼（有时连续眨两下），待机时轻轻歪头或伸展。
 右键可以打开菜单(开关插件 / 是否置顶 / 开机自动启动 / 退出)。
 猫的不透明部分仍可点击和拖拽，窗口中其余透明区域的点击会传给下方窗口；
 在 Linux Wayland 上暂不启用此功能。
@@ -52,11 +53,14 @@ desktop-pet/
 ├── assets/               # 角色素材(白底已抠成透明,供页面直接使用)
 │   ├── pet_idle_center.png      # 居中待机(默认)
 │   ├── pet_idle_front.png        # 正面自然待机
-│   └── pet_idle_left_tilt.png    # 左倾:思考/关注/疑惑
+│   ├── pet_idle_left_tilt.png    # 左倾:思考/关注/疑惑
+│   ├── pet_blink_center.png      # 居中姿态的闭眼帧
+│   ├── pet_blink_front.png       # 正面姿态的闭眼帧
+│   └── pet_blink_left_tilt.png   # 左倾姿态的闭眼帧
 ├── renderer/
-│   ├── index.html        # 页面结构 + 三张姿态素材
-│   ├── style.css          # 姿态切换与浮动/弹跳动画
-│   └── pet.js             # 拖拽 / 点击 / 姿态切换 / 插件启停
+│   ├── index.html        # 页面结构 + 姿态和眨眼素材
+│   ├── style.css         # 姿态切换与动作动画
+│   └── pet.js            # 拖拽 / 点击 / 动作调度 / 插件启停
 ├── plugins/
 │   ├── plugin-loader.js   # 插件系统基座
 │   ├── clock.js           # 示例插件: 整点报时
@@ -76,6 +80,7 @@ desktop-pet/
 | `idle_front` | `pet_idle_front.png` | 正面自然待机 |
 
 **摸一下(点击)会在三个姿态之间循环切换**,不需要插件参与。
+眨眼与待机动作也不依赖插件；系统开启“减少动态效果”时会停用自动动作。
 
 - 原始素材是**白底不透明**的,`assets/` 里的是处理后的透明版本。
   处理方式见下文"素材是怎么处理的"。
@@ -96,6 +101,7 @@ desktop-pet/
 处理后运行素材的实际尺寸:
 
 运行用的三张透明图已进一步清理底部视频水印；修改前的图片保存在 Git 基线提交中。
+三张闭眼帧按对应姿态生成，背景透明，用于短暂的眨眼切换。
 
 | 文件 | 尺寸 | 说明 |
 |---|---|---|
@@ -167,7 +173,7 @@ window.PetPlugins.push({
 | 方法 | 作用 |
 |---|---|
 | `api.say(text, durationMs?)` | 让桌宠冒出一个气泡说话,默认显示 3.5 秒 |
-| `api.react()` | 触发一次"挤压弹跳"反应动画 |
+| `api.react()` | 随机触发一次弹跳或摇摆反应动画 |
 | `api.setPose(pose)` | 切到指定姿态(见上文"角色素材与姿态") |
 | `api.nextPose()` | 切到循环里的下一个姿态(与"摸一下"等效) |
 | `api.resetPose()` | 回到默认待机姿态 |
@@ -183,7 +189,7 @@ window.PetPlugins.push({
 
 ## 怎么换外观 / 换角色
 
-角色已改为位图素材,`renderer/index.html` 里是三个叠放的 `<img class="pose">`,
+角色已改为位图素材,`renderer/index.html` 里是三张姿态图和各自的闭眼帧,
 通过 `body[data-pose="..."]` 控制哪一张可见(`renderer/style.css` 顶部)。
 
 **换一套素材**:把新的透明 PNG 放进 `assets/`,然后改两处:

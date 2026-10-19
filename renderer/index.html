@@ -8,13 +8,16 @@
 <body>
   <div id="bubble" class="bubble"></div>
 
-  <!-- 角色素材：灰白虎斑猫实拍姿态图（已在 assets/ 中抠除白底，带透明通道）
-       三个形态用透明度叠加切换，避免换姿态时闪烁。
+  <!-- 角色素材：灰白虎斑猫实拍姿态图和对应的闭眼帧（透明背景）
+       三个形态与闭眼帧用透明度切换，避免闪烁。
        语义沿用素材库：idle_center / idle_front / idle_left_tilt -->
   <div id="pet" class="pet">
     <img class="pose pose-center" src="../assets/pet_idle_center.png" alt="" draggable="false" />
+    <img class="pose blink-center" src="../assets/pet_blink_center.png" alt="" draggable="false" />
     <img class="pose pose-tilt"   src="../assets/pet_idle_left_tilt.png" alt="" draggable="false" />
+    <img class="pose blink-tilt" src="../assets/pet_blink_left_tilt.png" alt="" draggable="false" />
     <img class="pose pose-front"  src="../assets/pet_idle_front.png" alt="" draggable="false" />
+    <img class="pose blink-front" src="../assets/pet_blink_front.png" alt="" draggable="false" />
   </div>
 
   <script src="../plugins/plugin-loader.js"></script>

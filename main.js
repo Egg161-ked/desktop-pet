@@ -253,13 +253,14 @@ function setMousePassthrough(ignore) {
   if (!win || win.isDestroyed() || !CAN_TRACK_CURSOR) return;
   stopCursorPoll();
   // Windows/macOS can forward movement while clicks pass to the window below.
-  // Linux does not support forwarding, so poll the cursor only while ignored.
+  // Poll as a fallback while ignored, including after focus moves to another app.
   if (ignore && process.platform !== 'linux') {
     win.setIgnoreMouseEvents(true, { forward: true });
   } else {
     win.setIgnoreMouseEvents(ignore);
   }
-  if (ignore && process.platform === 'linux') {
+  // 点击气泡或其它窗口后，转发的 mousemove 可能停止；轮询可让猫身上的点击恢复。
+  if (ignore) {
     cursorPollTimer = setInterval(() => {
       if (!win || win.isDestroyed()) return stopCursorPoll();
       const point = cursorPositionInWindow();

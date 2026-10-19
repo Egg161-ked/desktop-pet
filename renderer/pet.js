@@ -97,7 +97,11 @@
       bubbleEl.textContent = text;
       bubbleEl.classList.add('show');
       clearTimeout(bubbleTimer);
-      bubbleTimer = setTimeout(() => bubbleEl.classList.remove('show'), durationMs);
+      bubbleTimer = setTimeout(() => {
+        bubbleEl.classList.remove('show');
+        updateFromSystemCursor();
+      }, durationMs);
+      updateFromSystemCursor();
     },
     // 切换姿态：'idle_center' | 'idle_left_tilt' | 'idle_front'
     // （也接受 idle / attention / thinking / front 这类语义别名）
@@ -122,7 +126,12 @@
   const alphaContext = alphaProbe.getContext('2d', { willReadFrequently: true });
   let canReadAlpha = !!alphaContext;
 
-  function isOverVisiblePet(x, y) {
+  function isOverInteractiveContent(x, y) {
+    if (bubbleEl.classList.contains('show')) {
+      const bubbleRect = bubbleEl.getBoundingClientRect();
+      if (x >= bubbleRect.left && x < bubbleRect.right
+        && y >= bubbleRect.top && y < bubbleRect.bottom) return true;
+    }
     for (const img of poseImages) {
       if (Number.parseFloat(getComputedStyle(img).opacity) < 0.08) continue;
       const rect = img.getBoundingClientRect();
@@ -153,7 +162,7 @@
   }
 
   function updateMousePassthrough(x, y) {
-    if (!dragging) setMousePassthrough(!isOverVisiblePet(x, y));
+    if (!dragging) setMousePassthrough(!isOverInteractiveContent(x, y));
   }
 
   async function updateFromSystemCursor() {
@@ -166,6 +175,11 @@
   }
 
   poseImages.forEach((img) => img.addEventListener('load', updateFromSystemCursor));
+  bubbleEl.addEventListener('click', () => {
+    clearTimeout(bubbleTimer);
+    bubbleEl.classList.remove('show');
+    updateFromSystemCursor();
+  });
   window.petBridge.onCursorPosition((point) => updateMousePassthrough(point.x, point.y));
   window.addEventListener('focus', updateFromSystemCursor);
   window.addEventListener('mouseleave', () => {

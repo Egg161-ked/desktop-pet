@@ -163,5 +163,7 @@ body.blinking[data-pose="idle_front"] .blink-front { opacity: 1; }
 
 .bubble.show {
   opacity: 1;
+  pointer-events: auto;
+  cursor: pointer;
   transform: translateX(-50%) translateY(0);
 }

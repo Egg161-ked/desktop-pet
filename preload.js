@@ -9,7 +9,12 @@ contextBridge.exposeInMainWorld('petBridge', {
   moveWindowBy: (dx, dy) => ipcRenderer.send('move-window-by', { dx, dy }),
   setMousePassthrough: (ignore) => ipcRenderer.send('set-mouse-passthrough', !!ignore),
   feedFile: (file) => {
-    const filePath = webUtils.getPathForFile(file);
-    return ipcRenderer.invoke('feed-file', filePath);
+    try {
+      const filePath = webUtils.getPathForFile(file);
+      return ipcRenderer.invoke('feed-file', filePath);
+    } catch {
+      return Promise.resolve({ ok: false, reason: 'invalid-file' });
+    }
   },
+  pickAndFeedFolder: () => ipcRenderer.invoke('pick-and-feed-folder'),
 });

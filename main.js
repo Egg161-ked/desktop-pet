@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, screen, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
@@ -236,36 +236,92 @@ function buildContextMenu() {
 
 ipcMain.handle('get-config', () => config);
 
-ipcMain.handle('feed-file', async (event, filePath) => {
-  if (!win || win.isDestroyed() || event.sender !== win.webContents) {
-    return { ok: false, reason: 'invalid-request' };
-  }
+function isWithinDir(dir, target) {
+  const relative = path.relative(dir, target);
+  return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep)
+    && !path.isAbsolute(relative));
+}
+
+async function feedPath(filePath) {
   if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) {
     return { ok: false, reason: 'invalid-file' };
   }
 
   const resolved = path.resolve(filePath);
-  const protectedDirs = [app.getAppPath(), app.getPath('userData')];
-  if (app.isPackaged) protectedDirs.push(path.dirname(process.execPath));
-  if (protectedDirs.some((dir) => {
-    const relative = path.relative(dir, resolved);
-    return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep)
-      && !path.isAbsolute(relative));
-  })) {
-    return { ok: false, reason: 'app-file' };
-  }
-
   try {
     const info = await fs.promises.lstat(resolved);
-    if (!info.isFile() || info.isSymbolicLink()) {
-      return { ok: false, reason: 'not-a-file' };
+    if (info.isSymbolicLink() || (!info.isFile() && !info.isDirectory())) {
+      return { ok: false, reason: 'unsupported-item' };
+    }
+
+    const isFolder = info.isDirectory();
+    const protectedDirs = [app.getAppPath(), app.getPath('userData')];
+    if (app.isPackaged) protectedDirs.push(path.dirname(process.execPath));
+    if (process.platform === 'win32') {
+      protectedDirs.push(process.env.SystemRoot, process.env.ProgramFiles,
+        process.env['ProgramFiles(x86)']);
+    }
+    const protectedPaths = protectedDirs.filter(Boolean);
+    const specialFolders = isFolder
+      ? ['home', 'desktop', 'documents', 'downloads', 'music', 'pictures', 'videos']
+        .flatMap((name) => {
+          try { return [app.getPath(name)]; } catch { return []; }
+        })
+      : [];
+    if (protectedPaths.some((dir) => isWithinDir(dir, resolved)
+      || (isFolder && isWithinDir(resolved, dir)))
+      || (isFolder && (path.parse(resolved).root === resolved
+        || specialFolders.some((dir) => isWithinDir(resolved, dir))))) {
+      return { ok: false, reason: 'protected-path' };
+    }
+
+    if (isFolder) {
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'warning',
+        title: '投喂文件夹',
+        message: `把“${path.basename(resolved)}”及其中的所有内容移入回收站？`,
+        detail: resolved,
+        buttons: ['取消', '移入回收站'],
+        defaultId: 0,
+        cancelId: 0,
+        noLink: true,
+      });
+      if (response !== 1) return { ok: false, reason: 'cancelled' };
+      const current = await fs.promises.lstat(resolved);
+      if (!current.isDirectory() || current.isSymbolicLink()) {
+        return { ok: false, reason: 'changed' };
+      }
     }
     await shell.trashItem(resolved);
-    return { ok: true };
+    return { ok: true, kind: isFolder ? 'folder' : 'file' };
   } catch (error) {
     console.warn('[pet] 投喂文件失败:', error);
     return { ok: false, reason: 'trash-failed' };
   }
+}
+
+function isPetSender(event) {
+  return win && !win.isDestroyed() && event.sender === win.webContents;
+}
+
+ipcMain.handle('feed-file', (event, filePath) => {
+  if (!isPetSender(event)) return { ok: false, reason: 'invalid-request' };
+  return feedPath(filePath);
+});
+
+ipcMain.handle('pick-and-feed-folder', async (event) => {
+  if (!isPetSender(event)) return { ok: false, reason: 'invalid-request' };
+  const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+    title: '选择要投喂的文件夹',
+    buttonLabel: '选择文件夹',
+    properties: ['openDirectory'],
+  });
+  if (canceled || filePaths.length !== 1) return { ok: false, reason: 'cancelled' };
+  const selected = await fs.promises.lstat(filePaths[0]);
+  if (!selected.isDirectory() || selected.isSymbolicLink()) {
+    return { ok: false, reason: 'unsupported-item' };
+  }
+  return feedPath(filePaths[0]);
 });
 
 function stopCursorPoll() {

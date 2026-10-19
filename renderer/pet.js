@@ -260,20 +260,36 @@
     e.preventDefault();
     const overPet = feedReady && isOverVisiblePet(e.clientX, e.clientY);
     const files = Array.from(e.dataTransfer.files);
+    const fileItems = Array.from(e.dataTransfer.items).filter((item) => item.kind === 'file');
+    const entry = fileItems.length === 1 && typeof fileItems[0].webkitGetAsEntry === 'function'
+      ? fileItems[0].webkitGetAsEntry() : null;
+    const droppedFolder = !!(entry && entry.isDirectory)
+      || (files.length === 0 && fileItems.length === 1);
+    if (files.length === 0 && fileItems.length === 1) {
+      const file = fileItems[0].getAsFile();
+      if (file) files.push(file);
+    }
     setFeedReady(false);
     if (!overPet || feedBusy) return;
-    if (files.length !== 1) {
-      petAPI.say('一次只吃一个文件喵。', 2500);
+    if (files.length > 1 || fileItems.length > 1 || (files.length === 0 && !droppedFolder)) {
+      petAPI.say('一次只吃一个文件或文件夹喵。', 2500);
       return;
     }
 
     feedBusy = true;
     renderFeedState();
     try {
-      const result = await window.petBridge.feedFile(files[0]);
+      let result = files.length === 1
+        ? await window.petBridge.feedFile(files[0])
+        : await window.petBridge.pickAndFeedFolder();
+      if (droppedFolder && result.reason === 'invalid-file') {
+        result = await window.petBridge.pickAndFeedFolder();
+      }
       if (result.ok) {
         playGesture('chewing', 650);
-        petAPI.say('吃掉啦！回收站还能找回。', 3000);
+        petAPI.say(result.kind === 'folder'
+          ? '文件夹吃掉啦！回收站能找回。'
+          : '吃掉啦！回收站还能找回。', 3000);
         setTimeout(() => {
           feedBusy = false;
           renderFeedState();
@@ -281,8 +297,10 @@
         return;
       }
       const messages = {
-        'not-a-file': '文件夹先不吃，文件还在。',
-        'app-file': '我的文件不能吃喵。',
+        'unsupported-item': '这个暂时不能吃喵。',
+        'protected-path': '这个位置不能吃喵。',
+        cancelled: '好，这次先不吃。',
+        changed: '文件夹变了，我先不吃。',
         'invalid-file': '只吃本地文件喵。',
       };
       petAPI.say(messages[result.reason] || '没吃下去，文件还在原处。', 3000);

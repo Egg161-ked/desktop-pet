@@ -1,0 +1,193 @@
+(function () {
+  const petEl = document.getElementById('pet');
+  const bubbleEl = document.getElementById('bubble');
+
+  let bubbleTimer = null;
+
+  // ---- 姿态（素材库的 idle_center / idle_front / idle_left_tilt）----
+  // idle_center : 默认待机
+  // idle_left_tilt : 思考 / 关注 / 疑惑
+  // idle_front  : 正面自然待机
+  // 摸一下（点击）就切到下一个姿态，循环。
+  const POSES = ['idle_center', 'idle_left_tilt', 'idle_front'];
+  const DEFAULT_POSE = 'idle_center';
+  // 语义别名，方便插件用状态名切换
+  const POSE_ALIAS = {
+    idle: 'idle_center',
+    attention: 'idle_left_tilt',
+    thinking: 'idle_left_tilt',
+    front: 'idle_front',
+  };
+  let poseIndex = 0;   // 当前处于循环中的第几个姿态
+
+  function renderPose() {
+    document.body.dataset.pose = POSES[poseIndex];
+  }
+
+  // 切到循环里的下一个形态
+  function nextPose() {
+    poseIndex = (poseIndex + 1) % POSES.length;
+    renderPose();
+    return POSES[poseIndex];
+  }
+
+  // 显式指定形态（插件用），会同步循环位置以便后续点击从它继续
+  function setPose(pose) {
+    const name = POSE_ALIAS[pose] || pose;
+    const i = POSES.indexOf(name);
+    if (i < 0) return;
+    poseIndex = i;
+    renderPose();
+  }
+
+  function resetPose() {
+    poseIndex = POSES.indexOf(DEFAULT_POSE);
+    renderPose();
+  }
+
+  // ---- 暴露给所有插件使用的公共 API ----
+  const petAPI = {
+    say(text, durationMs = 3500) {
+      bubbleEl.textContent = text;
+      bubbleEl.classList.add('show');
+      clearTimeout(bubbleTimer);
+      bubbleTimer = setTimeout(() => bubbleEl.classList.remove('show'), durationMs);
+    },
+    // 切换姿态：'idle_center' | 'idle_left_tilt' | 'idle_front'
+    // （也接受 idle / attention / thinking / front 这类语义别名）
+    setPose,
+    resetPose,
+    // 手动切到下一个姿态（和"摸一下"等效）
+    nextPose,
+    react() {
+      petEl.classList.remove('reacting');
+      void petEl.offsetWidth; // 强制重绘以重播动画
+      petEl.classList.add('reacting');
+    },
+    config: null, // 启动后由 main 注入
+  };
+  window.petAPI = petAPI;
+
+  // ---- 拖拽(手动实现,避免和点击手势冲突) ----
+  let dragging = false;
+  let lastX = 0, lastY = 0;
+  let moved = false;
+
+  petEl.addEventListener('mousedown', (e) => {
+    dragging = true;
+    moved = false;
+    lastX = e.screenX;
+    lastY = e.screenY;
+    petEl.classList.add('dragging');
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const dx = e.screenX - lastX;
+    const dy = e.screenY - lastY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
+    lastX = e.screenX;
+    lastY = e.screenY;
+    window.petBridge.moveWindowBy(dx, dy);
+  });
+
+  // ---- 插件运行状态 ----
+  // 主进程已经把默认值合并进 config.plugins，所以这里直接按配置判断：
+  // 只有显式为 true 的插件才运行；未列出的不运行（避免"偷偷在跑却没有开关"）。
+  const runningPlugins = new Map();   // id -> plugin 实例
+  const stoppedPlugins = new Set();   // 已执行过 stop 的 id，避免重复清理
+
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    petEl.classList.remove('dragging');
+    if (!moved) {
+      // 视为一次点击（"摸一下"）：挤压弹跳 + 切到下一个姿态
+      petAPI.react();
+      nextPose();
+      // 只触发正在运行的插件（否则被关掉的插件仍会响应点击）
+      runningPlugins.forEach((p) => {
+        if (typeof p.onClick === 'function') p.onClick(petAPI);
+      });
+    }
+  });
+
+  // ---- 右键菜单 ----
+  window.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    window.petBridge.showContextMenu();
+  });
+
+  // ---- 插件启停 ----
+
+  function applyPlugins(config) {
+    const states = (config && config.plugins) || {};
+
+    window.PetPlugins.forEach((plugin) => {
+      const wanted = states[plugin.id] === true;
+      const isRunning = runningPlugins.has(plugin.id);
+      if (wanted === isRunning) return;
+
+      if (wanted) {
+        stoppedPlugins.delete(plugin.id);
+        runningPlugins.set(plugin.id, plugin);
+        // 单个插件 init 抛错不应影响其它插件
+        try {
+          if (typeof plugin.init === 'function') plugin.init(petAPI);
+          console.log('[pet] 插件已启用:', plugin.id);
+        } catch (e) {
+          console.warn('[pet] 插件 init 出错:', plugin.id, e);
+        }
+      } else {
+        runningPlugins.delete(plugin.id);
+        // 调用 stop 让插件自己清掉 setInterval 之类的副作用
+        if (!stoppedPlugins.has(plugin.id) && typeof plugin.stop === 'function') {
+          try {
+            plugin.stop(petAPI);
+          } catch (e) {
+            console.warn('[pet] 插件 stop 出错:', plugin.id, e);
+          }
+        }
+        stoppedPlugins.add(plugin.id);
+        console.log('[pet] 插件已停用:', plugin.id);
+      }
+    });
+  }
+
+  // ---- 角色显示尺寸 ----
+  // 主进程通过 URL 查询参数传入 config.size，这里落到 CSS 变量 --pet-w 上，
+  // 保证"改配置就能改大小"，而不是写死在 CSS 里。
+  function applySize(config) {
+    let s = Number(new URLSearchParams(location.search).get('size'));
+    if (!Number.isFinite(s) || s <= 0) s = Number(config && config.size);
+    if (!Number.isFinite(s) || s <= 0) s = 99;
+    document.documentElement.style.setProperty('--pet-w', s + 'px');
+  }
+
+  // ---- 启动:加载配置,应用姿态,初始化插件 ----
+  async function boot() {
+    renderPose();   // 角色改为实拍素材后不再有皮肤，固定从待机姿态开始
+    const config = await window.petBridge.getConfig();
+    petAPI.config = config;
+    applySize(config);
+
+    // 提醒开发者：注册了插件但没写进 pluginDefaults，会导致它永远不会被启用
+    const declared = Object.keys((config && config.plugins) || {});
+    window.PetPlugins.forEach((p) => {
+      if (!declared.includes(p.id)) {
+        console.warn('[pet] 插件 "' + p.id + '" 未在 config.json 的 pluginDefaults 中声明，'
+          + '不会启用（请加一行 "' + p.id + '": true）');
+      }
+    });
+
+    applyPlugins(config);
+  }
+
+  window.petBridge.onConfigUpdated((config) => {
+    petAPI.config = config;
+    applySize(config);      // 尺寸跟随配置
+    applyPlugins(config);   // 右键菜单里开关插件后立即生效，无需重启
+  });
+
+  boot();
+})();

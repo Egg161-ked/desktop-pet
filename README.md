@@ -1,0 +1,202 @@
+# 桌面宠物 Desktop Pet
+
+一只可以拖拽、互动、DIY 加功能的桌面猫咪。基于 Electron,角色使用 `assets/` 下的实拍素材
+(灰白虎斑猫,白底已抠除为透明通道)。
+
+## 运行
+
+需要先安装 [Node.js](https://nodejs.org/)(建议 LTS 版本)。
+
+```bash
+cd desktop-pet
+npm install
+npm start
+```
+
+第一次启动会在屏幕右下角出现一只猫。左键拖拽可以移动它,点它会有反应(切到"关注"姿态),
+右键可以打开菜单(开关插件 / 是否置顶 / 开机自动启动 / 退出)。
+
+> 注意:重复启动只会保留一只猫(单实例锁),第二次启动会让已有窗口重新显示到最前。
+
+## 开机自动启动
+
+在右键菜单里勾选 **"开机自动启动"** 即可,无需重启。
+
+- Windows 上是往 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+  写一条名为 `DesktopPet` 的启动项,可在"任务管理器 → 启动"里查看和管理。
+- 配置项是 `config.json` 里的 `autoStart`。程序启动时会按这个值**同步**系统登录项,
+  所以手改配置文件同样生效,且系统启动项被外部清理后下次启动会自动补回。
+- 取消勾选会删除该启动项。
+
+> 开发模式(`npm start`)下启动项指向 `node_modules/electron/dist/electron.exe`
+> 并附带项目路径,因此**移动项目目录后需要重新勾选一次**;
+> 打包成 App 后(`npm run build`)指向 App 自身,不存在这个问题。
+
+## 打包成独立 App(不需要 Node 环境也能运行)
+
+```bash
+npm run build
+```
+
+会在 `dist/` 目录生成 Windows / macOS / Linux 对应的安装包(用的是 electron-builder,按你的系统自动出对应格式)。
+
+## 目录结构
+
+```
+desktop-pet/
+├── main.js              # Electron 主进程:窗口、右键菜单、配置读写
+├── preload.js            # 安全暴露给页面的接口
+├── config.json           # 默认配置(尺寸、插件开关等)
+├── assets/               # 角色素材(白底已抠成透明,供页面直接使用)
+│   ├── pet_idle_center.png      # 居中待机(默认)
+│   ├── pet_idle_front.png        # 正面自然待机
+│   └── pet_idle_left_tilt.png    # 左倾:思考/关注/疑惑
+├── renderer/
+│   ├── index.html        # 页面结构 + 三张姿态素材
+│   ├── style.css          # 姿态切换与浮动/弹跳动画
+│   └── pet.js             # 拖拽 / 点击 / 姿态切换 / 插件启停
+├── plugins/
+│   ├── plugin-loader.js   # 插件系统基座
+│   ├── clock.js           # 示例插件: 整点报时
+│   ├── quotes.js          # 示例插件: 空闲随机台词
+│   └── click-react.js     # 示例插件: 点击互动
+└── 素材/                  # 原始素材(未处理的白底图 + 参考视频),不参与运行
+```
+
+## 角色素材与姿态
+
+角色是三张实拍姿态图,语义沿用素材库的映射:
+
+| 姿态 | 素材 | 何时显示 |
+|---|---|---|
+| `idle_center` | `pet_idle_center.png` | 默认待机 |
+| `idle_left_tilt` | `pet_idle_left_tilt.png` | 点击桌宠、思考、关注 |
+| `idle_front` | `pet_idle_front.png` | 正面自然待机 |
+
+**摸一下(点击)会在三个姿态之间循环切换**,不需要插件参与。
+
+- 原始素材是**白底不透明**的,`assets/` 里的是处理后的透明版本。
+  处理方式见下文"素材是怎么处理的"。
+- 角色显示宽度由 `config.json` 的 `size` 决定(单位 CSS px,默认 99)。
+- 插件可以通过 `api.setPose(姿态)` 直接切换,也接受语义别名
+  (`idle` / `attention` / `thinking` / `front`);`api.nextPose()` 等效于"摸一下",
+  `api.resetPose()` 回到默认待机。
+
+### 素材是怎么处理的
+
+原始 PNG 背景是纯白且不透明,直接放桌面会是一个白方块。`assets/` 里的图经过两步处理:
+
+1. **抠背景**:从画布四边做 flood fill,只删除**与边缘连通的**白色。
+   不能按颜色全局抠 —— 猫本身是白毛,全局抠会在身上挖洞。
+2. **补小洞**:猫身上的白色高光被上一步吃掉后会留下极小孤岛,对这些
+   (小于 80px 的封闭区域)按周围颜色回填。真实镂空结构(如腿间缝隙)不受影响。
+
+抠图后的实际尺寸:
+
+| 文件 | 尺寸 | 前景占比 |
+|---|---|---|
+| `pet_idle_center.png` | 620×765 | 80.0% |
+| `pet_idle_front.png` | 711×936 | 76.8% |
+| `pet_idle_left_tilt.png` | 619×779 | 79.4% |
+
+## 怎么 DIY 一个新功能(插件)
+
+不需要碰 Electron 那部分代码,只在 `plugins/` 里新建一个文件,比如 `plugins/water-reminder.js`:
+
+```js
+window.PetPlugins.push({
+  id: 'water-reminder',       // 唯一标识,和 config.json 里的开关对应
+
+  timerId: null,
+
+  init(api) {
+    // 启动时执行一次;可以用 api.say() 说话、setInterval 做定时任务
+    this.timerId = setInterval(() => {
+      api.say('该喝水啦 💧');
+    }, 45 * 60 * 1000); // 每 45 分钟提醒一次
+  },
+
+  stop(api) {
+    // 可选,但只要有 setInterval / 事件监听就必须写:
+    // 用户在右键菜单里关掉这个插件时会调用它,不清掉定时器就会"关了还在跑"
+    if (this.timerId !== null) {
+      clearInterval(this.timerId);
+      this.timerId = null;
+    }
+  },
+
+  onClick(api) {
+    // 可选: 用户点击桌宠时触发(仅在该插件处于启用状态时才会触发)
+    api.say('已经喝了几杯水了呀?');
+  },
+});
+```
+
+然后两处小改动:
+
+1. 在 `renderer/index.html` 里加一行引入(放在 `pet.js` 之前):
+   ```html
+   <script src="../plugins/water-reminder.js"></script>
+   ```
+2. 在 `config.json` 的 `pluginDefaults` 里声明它的初始状态:
+   ```json
+   "pluginDefaults": {
+     "water-reminder": true
+   }
+   ```
+
+重启 App 就生效了,右键菜单里也会自动出现这个插件的开关。
+
+> `pluginDefaults` 是"插件都有哪些、默认开不开"的声明,`plugins` 是用户当前的实际状态。
+> 启动时主进程会把 `pluginDefaults` 里**用户配置还没有的键**补进 `plugins`,
+> 所以新增插件不必手动去改用户目录里的配置。
+> 没在 `pluginDefaults` 里声明的插件不会启用(控制台会给出提示),避免出现
+> "插件偷偷在跑、菜单里却没有开关"的情况。
+
+### 开关是实时生效的
+
+右键菜单里切换插件开关会**立即生效**,不需要重启:`stop()` 会被调用清掉定时器,
+再打开时会重新走一次 `init()`。
+
+### 插件能拿到的 API
+
+| 方法 | 作用 |
+|---|---|
+| `api.say(text, durationMs?)` | 让桌宠冒出一个气泡说话,默认显示 3.5 秒 |
+| `api.react()` | 触发一次"挤压弹跳"反应动画 |
+| `api.setPose(pose)` | 切到指定姿态(见上文"角色素材与姿态") |
+| `api.nextPose()` | 切到循环里的下一个姿态(与"摸一下"等效) |
+| `api.resetPose()` | 回到默认待机姿态 |
+| `api.config` | 读取当前配置(如 `api.config.idleIntervalMinutes`) |
+
+插件对象的可选钩子: `init(api)` / `stop(api)` / `onClick(api)`。
+`stop` 在插件被关闭时调用,用来清理 `setInterval`、事件监听等副作用。
+
+你可以在 `init` 里用 `fetch()` 请求接口(比如天气 API)、读取剪贴板、调用系统通知等 —— Electron 渲染进程就是一个浏览器环境,想接什么都可以。
+
+> 注意:插件在 `init` 里创建的定时器/监听要在 `stop` 里清掉,否则用户关掉插件后
+> 它仍会继续运行。
+
+## 怎么换外观 / 换角色
+
+角色已改为位图素材,`renderer/index.html` 里是三个叠放的 `<img class="pose">`,
+通过 `body[data-pose="..."]` 控制哪一张可见(`renderer/style.css` 顶部)。
+
+**换一套素材**:把新的透明 PNG 放进 `assets/`,然后改两处:
+
+1. `renderer/index.html` 里 `<img>` 的 `src`。
+2. 如果姿态名要改,同步改 `renderer/pet.js` 的 `POSES` 数组和 `style.css` 里的
+   `body[data-pose="..."]` 规则。
+
+**调整大小**:改 `config.json` 里的 `size`(单位 CSS px,决定角色显示宽度)。
+主进程会把它注入成 CSS 变量 `--pet-w`,所以不用动 CSS。
+
+> 早期版本的角色是纯 SVG + CSS 配色皮肤,现已移除 —— 实拍素材无法靠 CSS 变量换色。
+
+## 小贴士
+
+- 想要开机自启动,可以在 `main.js` 里加 `app.setLoginItemSettings({ openAtLogin: true })`。
+- 如果想让点击穿透桌宠(不遮挡桌面操作),可以研究 `win.setIgnoreMouseEvents()`,按需在特定状态下切换。
+- 配置文件运行后会被复制一份到系统的用户数据目录(不是项目里的 `config.json`),所以你在右键菜单里做的修改是持久化的,不会因为改项目源码丢失。
+- 手改配置文件时注意:**别用会写入 UTF-8 BOM 的编辑器**(某些 Windows 工具的默认行为)。
+  程序已对 BOM 做了兼容处理,但保持无 BOM 更稳妥。

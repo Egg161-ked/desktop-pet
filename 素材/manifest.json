@@ -1,0 +1,33 @@
+{
+  "version": "2.0",
+  "character": "pet",
+  "assets": [
+    {
+      "path": "assets/pet_shape_round.png",
+      "state": "shape_round",
+      "meaning": "round compressed relaxed form"
+    },
+    {
+      "path": "assets/pet_shape_legs.png",
+      "state": "shape_legs",
+      "meaning": "standing form with short legs"
+    },
+    {
+      "path": "assets/pet_shape_one_ear.png",
+      "state": "shape_one_ear",
+      "meaning": "single prominent ear form; attention"
+    },
+    {
+      "path": "assets/pet_shape_two_ears.png",
+      "state": "shape_two_ears",
+      "meaning": "complete two-ear standing form; default"
+    }
+  ],
+  "default": "assets/pet_shape_two_ears.png",
+  "rules": [
+    "Only use listed assets",
+    "Do not invent animations or filenames",
+    "Assets are static RGBA PNGs",
+    "Animation must be implemented by the application layer"
+  ]
+}

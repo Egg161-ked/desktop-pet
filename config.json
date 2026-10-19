@@ -1,0 +1,16 @@
+{
+  "size": 99,
+  "alwaysOnTop": true,
+  "autoStart": true,
+  "idleIntervalMinutes": 6,
+  "pluginDefaults": {
+    "clock": true,
+    "quotes": true,
+    "click-react": true
+  },
+  "plugins": {
+    "clock": true,
+    "quotes": true,
+    "click-react": true
+  }
+}

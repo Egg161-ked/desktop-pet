@@ -1,0 +1,121 @@
+/*
+ * 角色为实拍素材（assets/*.png，灰白虎斑猫，白底已抠除）。
+ * 姿态切换约定：body[data-pose="..."] 决定显示哪一张，未匹配到的一律淡出。
+ *   idle_center（默认） / idle_left_tilt / idle_front
+ * 兜底：未设 data-pose 时也显示默认姿态，避免加载瞬间空白。
+ */
+
+:root {
+  --bubble-bg: #2E2A26;
+  --bubble-text: #FBF6EF;
+  /* 角色层显示宽度（三张素材宽高比 0.76~0.81，按宽度统一才不会有的大有小） */
+  --pet-w: 99px;
+  /* 姿态切换的过渡时间 */
+  --pose-fade: 220ms;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.pet {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--pet-w);
+  height: calc(var(--pet-w) * 1.15);
+  cursor: grab;
+  /* 轻微上下浮动，让静态素材看起来"活着" */
+  animation: float 4.2s ease-in-out infinite;
+}
+
+.pet.dragging {
+  animation: none;
+  transform: translateX(-50%) scale(0.94, 1.06);
+  cursor: grabbing;
+}
+
+.pet.reacting {
+  animation: pop 0.5s ease;
+}
+
+/* 三张姿态图叠放在同一位置，底边对齐，用 opacity 切换 */
+.pose {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: var(--pet-w);
+  height: auto;
+  opacity: 0;
+  transition: opacity var(--pose-fade) ease;
+  /* 素材本身带透明通道，给它一点落影以便贴在任何桌面上都看得清 */
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.22));
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* 默认：居中待机 */
+body[data-pose="idle_center"] .pose-center,
+body:not([data-pose]) .pose-center { opacity: 1; }
+
+/* 思考 / 关注 / 疑惑：左倾 */
+body[data-pose="idle_left_tilt"] .pose-tilt,
+body[data-pose="thinking"] .pose-tilt,
+body[data-pose="attention"] .pose-tilt { opacity: 1; }
+
+/* 正面自然待机 */
+body[data-pose="idle_front"] .pose-front { opacity: 1; }
+
+@keyframes float {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50%      { transform: translateX(-50%) translateY(-4px); }
+}
+
+@keyframes pop {
+  0%   { transform: translateX(-50%) scale(1); }
+  40%  { transform: translateX(-50%) scale(1.1, 0.92); }
+  100% { transform: translateX(-50%) scale(1); }
+}
+
+.bubble {
+  position: absolute;
+  top: 4px;
+  left: 50%;
+  transform: translateX(-50%) translateY(6px);
+  max-width: 200px;
+  padding: 8px 14px;
+  background: var(--bubble-bg);
+  color: var(--bubble-text);
+  font-size: 13px;
+  line-height: 1.4;
+  border-radius: 14px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px 6px 0 6px;
+  border-style: solid;
+  border-color: var(--bubble-bg) transparent transparent transparent;
+}
+
+.bubble.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}

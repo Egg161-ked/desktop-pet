@@ -55,6 +55,8 @@ const AUTOSTART_NAME = 'DesktopPet';
 const AUTOSTART_CMD = `"${process.execPath}"` + (app.isPackaged ? '' : ` "${__dirname}"`);
 
 let win;
+let cursorPollTimer = null;
+const CAN_TRACK_CURSOR = process.platform !== 'linux' || process.env.XDG_SESSION_TYPE !== 'wayland';
 let config = loadConfig();
 
 // 把合并后的插件列表落盘。否则 pluginDefaults 里新增的插件只存在于内存中，
@@ -109,6 +111,7 @@ function createWindow() {
       contextIsolation: true,
     },
   });
+  win.on('closed', stopCursorPoll);
 
   // 落到右下角。
   // 坑：workArea 给的是物理像素，而窗口坐标实际被当作 DIP×scaleFactor 解释，
@@ -232,6 +235,51 @@ function buildContextMenu() {
 }
 
 ipcMain.handle('get-config', () => config);
+
+function stopCursorPoll() {
+  if (cursorPollTimer !== null) {
+    clearInterval(cursorPollTimer);
+    cursorPollTimer = null;
+  }
+}
+
+function cursorPositionInWindow() {
+  const point = screen.getCursorScreenPoint();
+  const bounds = win.getBounds();
+  return { x: point.x - bounds.x, y: point.y - bounds.y };
+}
+
+function setMousePassthrough(ignore) {
+  if (!win || win.isDestroyed() || !CAN_TRACK_CURSOR) return;
+  stopCursorPoll();
+  // Windows/macOS can forward movement while clicks pass to the window below.
+  // Linux does not support forwarding, so poll the cursor only while ignored.
+  if (ignore && process.platform !== 'linux') {
+    win.setIgnoreMouseEvents(true, { forward: true });
+  } else {
+    win.setIgnoreMouseEvents(ignore);
+  }
+  if (ignore && process.platform === 'linux') {
+    cursorPollTimer = setInterval(() => {
+      if (!win || win.isDestroyed()) return stopCursorPoll();
+      const point = cursorPositionInWindow();
+      const bounds = win.getBounds();
+      if (point.x >= 0 && point.y >= 0 && point.x < bounds.width && point.y < bounds.height) {
+        win.webContents.send('cursor-position', point);
+      }
+    }, 75);
+  }
+}
+
+ipcMain.handle('get-cursor-position', (event) => {
+  if (!win || win.isDestroyed() || !CAN_TRACK_CURSOR || event.sender !== win.webContents) return null;
+  return cursorPositionInWindow();
+});
+
+ipcMain.on('set-mouse-passthrough', (event, ignore) => {
+  if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
+  setMousePassthrough(ignore === true);
+});
 
 ipcMain.on('show-context-menu', () => {
   buildContextMenu().popup({ window: win });

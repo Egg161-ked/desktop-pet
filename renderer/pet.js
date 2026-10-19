@@ -72,8 +72,65 @@
   let dragging = false;
   let lastX = 0, lastY = 0;
   let moved = false;
+  let mousePassthrough = null; // Force an initial sync after a renderer reload.
+  const poseImages = Array.from(petEl.querySelectorAll('.pose'));
+  const alphaProbe = document.createElement('canvas');
+  alphaProbe.width = alphaProbe.height = 1;
+  const alphaContext = alphaProbe.getContext('2d', { willReadFrequently: true });
+  let canReadAlpha = !!alphaContext;
+
+  function isOverVisiblePet(x, y) {
+    for (const img of poseImages) {
+      if (Number.parseFloat(getComputedStyle(img).opacity) < 0.08) continue;
+      const rect = img.getBoundingClientRect();
+      if (x < rect.left || x >= rect.right || y < rect.top || y >= rect.bottom) continue;
+      if (!canReadAlpha || !img.complete || !img.naturalWidth) return true;
+
+      const sx = Math.min(img.naturalWidth - 1,
+        Math.floor((x - rect.left) * img.naturalWidth / rect.width));
+      const sy = Math.min(img.naturalHeight - 1,
+        Math.floor((y - rect.top) * img.naturalHeight / rect.height));
+      try {
+        alphaContext.clearRect(0, 0, 1, 1);
+        alphaContext.drawImage(img, sx, sy, 1, 1, 0, 0, 1, 1);
+        if (alphaContext.getImageData(0, 0, 1, 1).data[3] >= 24) return true;
+      } catch (e) {
+        // If canvas pixel reads are restricted, retain the image bounds as a safe hit area.
+        canReadAlpha = false;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function setMousePassthrough(ignore) {
+    if (mousePassthrough === ignore) return;
+    mousePassthrough = ignore;
+    window.petBridge.setMousePassthrough(ignore);
+  }
+
+  function updateMousePassthrough(x, y) {
+    if (!dragging) setMousePassthrough(!isOverVisiblePet(x, y));
+  }
+
+  async function updateFromSystemCursor() {
+    try {
+      const point = await window.petBridge.getCursorPosition();
+      if (point) updateMousePassthrough(point.x, point.y);
+    } catch (e) {
+      console.warn('[pet] 读取鼠标位置失败:', e);
+    }
+  }
+
+  poseImages.forEach((img) => img.addEventListener('load', updateFromSystemCursor));
+  window.petBridge.onCursorPosition((point) => updateMousePassthrough(point.x, point.y));
+  window.addEventListener('focus', updateFromSystemCursor);
+  window.addEventListener('mouseleave', () => {
+    if (!dragging) setMousePassthrough(true);
+  });
 
   petEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
     dragging = true;
     moved = false;
     lastX = e.screenX;
@@ -82,7 +139,14 @@
   });
 
   window.addEventListener('mousemove', (e) => {
+    updateMousePassthrough(e.clientX, e.clientY);
     if (!dragging) return;
+    if (!(e.buttons & 1)) {
+      dragging = false;
+      petEl.classList.remove('dragging');
+      updateMousePassthrough(e.clientX, e.clientY);
+      return;
+    }
     const dx = e.screenX - lastX;
     const dy = e.screenY - lastY;
     if (Math.abs(dx) > 2 || Math.abs(dy) > 2) moved = true;
@@ -97,10 +161,11 @@
   const runningPlugins = new Map();   // id -> plugin 实例
   const stoppedPlugins = new Set();   // 已执行过 stop 的 id，避免重复清理
 
-  window.addEventListener('mouseup', () => {
+  window.addEventListener('mouseup', (e) => {
     if (!dragging) return;
     dragging = false;
     petEl.classList.remove('dragging');
+    updateMousePassthrough(e.clientX, e.clientY);
     if (!moved) {
       // 视为一次点击（"摸一下"）：挤压弹跳 + 切到下一个姿态
       petAPI.react();
@@ -110,6 +175,12 @@
         if (typeof p.onClick === 'function') p.onClick(petAPI);
       });
     }
+  });
+
+  window.addEventListener('blur', () => {
+    dragging = false;
+    petEl.classList.remove('dragging');
+    updateFromSystemCursor();
   });
 
   // ---- 右键菜单 ----
@@ -181,6 +252,7 @@
     });
 
     applyPlugins(config);
+    updateFromSystemCursor();
   }
 
   window.petBridge.onConfigUpdated((config) => {

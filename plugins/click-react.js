@@ -1,23 +1,33 @@
 // 点击反应：摸一下冒一句（同时会切换形态）。
-// 语气偏"打工人共鸣"——被打断时的小吐槽。
+// 点击时给一句短回应，不催促用户继续工作。
 window.PetPlugins.push({
   id: 'click-react',
 
   reactions: [
-    '又摸鱼？需求写完了吗。',
-    '戳我干嘛，去改 bug 呀。',
-    '我不是进度条，戳了也不会动。',
-    '别摸了，再摸这个需求也不会自己写完。',
-    '嗯？我看看是谁在偷懒。',
-    '我在这儿呢，一直都在。',
-    '行行行，摸完就去干活。',
-    '这一下算你休息时间，下一分钟该写代码了。',
-    '你是不是卡住了？卡住了就歇会儿。',
-    '摸我可以，别忘了 deadline。',
+    '喵，收到。',
+    '摸到了，今天运气加一。',
+    '欸？刚刚是你在叫我吗？',
+    '再摸一下，我就要打呼噜了。',
+    '别急，我陪你想想。',
+    '我只是刚好路过你的桌面。',
+    '手感怎么样？很努力养出来的。',
+    '这次允许摸两秒。',
+    '喵！差点把灵感拍出来。',
+    '我抖抖毛，继续陪你。',
+    '猫已充电，继续出发。',
+    '要一起盯着这个 bug 吗？',
+    '好啦，我在。',
+    '嘘，我正在认真卖萌。',
   ],
 
+  lastIndex: -1,
+
   onClick(api) {
-    const text = this.reactions[Math.floor(Math.random() * this.reactions.length)];
-    api.say(text, 2000);
+    let index = Math.floor(Math.random() * this.reactions.length);
+    if (index === this.lastIndex && this.reactions.length > 1) {
+      index = (index + 1 + Math.floor(Math.random() * (this.reactions.length - 1))) % this.reactions.length;
+    }
+    this.lastIndex = index;
+    api.say(this.reactions[index], 2500);
   },
 });

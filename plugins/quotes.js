@@ -1,33 +1,46 @@
 // 空闲台词：每隔 idleIntervalMinutes 分钟随机冒一句。
-// 语气偏"打工人共鸣"——吐槽加班/需求/bug/开会，但底色是陪着你。
+// 语气轻松，像一只在桌边陪伴的猫；尽量简短，适合气泡显示。
 window.PetPlugins.push({
   id: 'quotes',
 
   lines: [
-    '需求又改了？我一点都不意外。',
-    '这个 bug 我看了三遍，它也在看我。',
-    '别急，先喝口水，代码不会跑。',
-    '会议结束了，事情一件没少。',
-    '又到下班点了，你猜谁还在工位上。',
-    '我看你敲了半天，删掉的那段其实挺好的。',
-    '今天也是被 deadline 追着跑的一天。',
-    '深呼吸，深呼吸，然后继续改。',
-    '你已经做得很好了，真的。',
-    '要不要站起来走两步？我等你回来。',
-    '窗外的天都黑了，你注意点时间呀。',
-    '这版一定能过……吧？',
-    '不用回消息，先把手头这个收尾。',
-    '我趴这儿看着你干活，不吵你。',
-    '累了就揉揉眼睛，我不笑话你。',
+    '我盯着光标，它先眨眼了。',
+    '这行代码看起来很有精神。',
+    '先伸个懒腰，我替你看着。',
+    '今天的灵感，正在加载中。',
+    '写累了就眨眨眼，像我这样。',
+    '有些 bug，睡一觉就肯招了。',
+    '保存一下吧，我有点不放心。',
+    '这次运行，我押它能过。',
+    '先喝口水，思路会更清楚。',
+    '慢慢来，猫也不是一天学会跳的。',
+    '你写代码，我负责卖萌。',
+    '我在桌角值班，一切正常。',
+    '休息两分钟，我帮你盯屏幕。',
+    '这个变量名，我给九分。',
+    '如果卡住了，先换个角度看。',
+    '新的一行，也许就是答案。',
+    '今晚的计划：收尾，然后休息。',
+    '点子还没来？先摸摸猫。',
+    '我刚才在认真研究你的鼠标。',
+    '今天也要记得给自己留点电。',
+    '代码会改好，饭也要记得吃。',
+    '不急，先把眼前这一步走完。',
+    '要不要听我喵一声？喵。',
   ],
 
   timerId: null,
+  lastIndex: -1,
 
   init(api) {
     const minutes = (api.config && api.config.idleIntervalMinutes) || 6;
     this.timerId = setInterval(() => {
-      const text = this.lines[Math.floor(Math.random() * this.lines.length)];
-      api.say(text);
+      let index = Math.floor(Math.random() * this.lines.length);
+      if (index === this.lastIndex && this.lines.length > 1) {
+        index = (index + 1 + Math.floor(Math.random() * (this.lines.length - 1))) % this.lines.length;
+      }
+      this.lastIndex = index;
+      api.say(this.lines[index]);
     }, minutes * 60 * 1000);
   },
 

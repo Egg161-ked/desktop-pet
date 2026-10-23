@@ -28,11 +28,13 @@
     "asarUnpack": [
       "node_modules/get-windows/lib/binding/**/*.node"
     ],
+    "npmRebuild": false,
     "mac": {
       "target": "dmg"
     },
     "win": {
       "target": "portable",
+      "signAndEditExecutable": false,
       "extraResources": [
         {
           "from": "node_modules/windows-media-sessions/bin/win-x64/windows-media-sessions-backend.exe",

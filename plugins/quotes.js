@@ -35,12 +35,13 @@ window.PetPlugins.push({
   init(api) {
     const minutes = (api.config && api.config.idleIntervalMinutes) || 6;
     this.timerId = setInterval(() => {
+      if (document.body.dataset.activity === 'video') return;
       let index = Math.floor(Math.random() * this.lines.length);
       if (index === this.lastIndex && this.lines.length > 1) {
         index = (index + 1 + Math.floor(Math.random() * (this.lines.length - 1))) % this.lines.length;
       }
       this.lastIndex = index;
-      api.say(this.lines[index]);
+      api.sayAmbient(this.lines[index]);
     }, minutes * 60 * 1000);
   },
 

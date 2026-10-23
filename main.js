@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, screen, shell } = require('el
 const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
+const { createSystemActivity } = require('./system-activity');
 
 const USER_CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 const DEFAULT_CONFIG_PATH = path.join(__dirname, 'config.json');
@@ -55,6 +56,7 @@ const AUTOSTART_NAME = 'DesktopPet';
 const AUTOSTART_CMD = `"${process.execPath}"` + (app.isPackaged ? '' : ` "${__dirname}"`);
 
 let win;
+let activityMonitor;
 let cursorPollTimer = null;
 const CAN_TRACK_CURSOR = process.platform !== 'linux' || process.env.XDG_SESSION_TYPE !== 'wayland';
 let config = loadConfig();
@@ -111,7 +113,11 @@ function createWindow() {
       contextIsolation: true,
     },
   });
-  win.on('closed', stopCursorPoll);
+  win.on('closed', () => {
+    stopCursorPoll();
+    activityMonitor?.stop();
+    activityMonitor = null;
+  });
 
   // 落到右下角。
   // 坑：workArea 给的是物理像素，而窗口坐标实际被当作 DIP×scaleFactor 解释，
@@ -137,6 +143,26 @@ function createWindow() {
   // （比 insertCSS 可靠：注入时机/优先级都不稳定）。
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'), {
     query: { size: String(config.size || 99) },
+  });
+
+  activityMonitor = createSystemActivity({
+    packaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    isOwnWindow: (owner) => owner.processId === process.pid
+      || owner.processId === win.webContents.getOSProcessId(),
+    onUpdate: (state) => {
+      if (win && !win.isDestroyed()) win.webContents.send('activity-updated', state);
+    },
+  });
+  syncActivityMonitor();
+}
+
+function syncActivityMonitor() {
+  if (!activityMonitor) return;
+  const plugins = config.plugins || {};
+  activityMonitor.setEnabled({
+    music: plugins['music-link'] === true,
+    app: plugins['app-link'] === true,
   });
 }
 
@@ -179,6 +205,7 @@ function setAutoStart(enabled) {
 
 function buildContextMenu() {
   const plugins = config.plugins || {};   // 兜底：配置异常时也不要让右键菜单炸掉
+  const pluginLabels = { 'music-link': '音乐联动', 'app-link': '应用联动' };
   const pluginKeys = Object.keys(plugins);
   let autoStart;
   try {
@@ -191,13 +218,14 @@ function buildContextMenu() {
     {
       label: '插件开关',
       submenu: pluginKeys.map((k) => ({
-        label: k,
+        label: pluginLabels[k] || k,
         type: 'checkbox',
         checked: !!plugins[k],
         click: (item) => {
           plugins[k] = item.checked;
           saveConfig(config);
           win.webContents.send('config-updated', config);
+          syncActivityMonitor();
         },
       })),
     },
@@ -235,6 +263,8 @@ function buildContextMenu() {
 }
 
 ipcMain.handle('get-config', () => config);
+ipcMain.handle('get-activity-state', (event) =>
+  isPetSender(event) && activityMonitor ? activityMonitor.getState() : null);
 
 function isWithinDir(dir, target) {
   const relative = path.relative(dir, target);
@@ -425,6 +455,8 @@ ipcMain.on('move-window-by', (event, { dx, dy }) => {
 });
 
 app.whenReady().then(createWindow);
+
+app.on('before-quit', () => activityMonitor?.stop());
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();

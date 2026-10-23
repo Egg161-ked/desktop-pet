@@ -6,11 +6,15 @@
   "pluginDefaults": {
     "clock": true,
     "quotes": true,
-    "click-react": true
+    "click-react": true,
+    "music-link": true,
+    "app-link": true
   },
   "plugins": {
     "clock": true,
     "quotes": true,
-    "click-react": true
+    "click-react": true,
+    "music-link": true,
+    "app-link": true
   }
 }

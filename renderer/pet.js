@@ -3,6 +3,7 @@
   const bubbleEl = document.getElementById('bubble');
 
   let bubbleTimer = null;
+  let lastAmbientAt = 0;
   let dragging = false;
   let feedReady = false;
   let feedBusy = false;
@@ -105,6 +106,14 @@
         updateFromSystemCursor();
       }, durationMs);
       updateFromSystemCursor();
+    },
+    sayAmbient(text, durationMs = 3500) {
+      if (dragging || feedReady || feedBusy || document.hidden
+        || bubbleEl.classList.contains('show')
+        || Date.now() - lastAmbientAt < 60 * 1000) return false;
+      this.say(text, durationMs);
+      lastAmbientAt = Date.now();
+      return true;
     },
     // 切换姿态：'idle_center' | 'idle_left_tilt' | 'idle_front'
     // （也接受 idle / attention / thinking / front 这类语义别名）

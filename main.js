@@ -114,6 +114,7 @@ function createWindow() {
     },
   });
   win.on('closed', () => {
+    cancelRoam();
     stopCursorPoll();
     activityMonitor?.stop();
     activityMonitor = null;
@@ -132,6 +133,7 @@ function createWindow() {
   const spawnY = Math.min(Math.max(areaH - h - margin, 0), Math.max(0, areaH - h));
   win.setBounds({ x: spawnX, y: spawnY, width: w, height: h });
   posCache = [spawnX, spawnY];
+  roamAnchorX = spawnX;
   winTargetW = w;
   winTargetH = h;
 
@@ -151,6 +153,7 @@ function createWindow() {
     isOwnWindow: (owner) => owner.processId === process.pid
       || owner.processId === win.webContents.getOSProcessId(),
     onUpdate: (state) => {
+      if (state.music.playing || state.app.category === 'video') cancelRoam();
       if (win && !win.isDestroyed()) win.webContents.send('activity-updated', state);
     },
   });
@@ -205,7 +208,7 @@ function setAutoStart(enabled) {
 
 function buildContextMenu() {
   const plugins = config.plugins || {};   // 兜底：配置异常时也不要让右键菜单炸掉
-  const pluginLabels = { 'music-link': '音乐联动', 'app-link': '应用联动' };
+  const pluginLabels = { 'music-link': '音乐联动', 'app-link': '应用联动', roam: '偶尔挪窝' };
   const pluginKeys = Object.keys(plugins);
   let autoStart;
   try {
@@ -223,6 +226,7 @@ function buildContextMenu() {
         checked: !!plugins[k],
         click: (item) => {
           plugins[k] = item.checked;
+          if (k === 'roam' && !item.checked) cancelRoam();
           saveConfig(config);
           win.webContents.send('config-updated', config);
           syncActivityMonitor();
@@ -401,6 +405,7 @@ ipcMain.on('set-mouse-passthrough', (event, ignore) => {
 });
 
 ipcMain.on('show-context-menu', () => {
+  cancelRoam();
   buildContextMenu().popup({ window: win });
 });
 
@@ -414,10 +419,36 @@ let winTargetW = 0;         // 目标窗口宽（含边框）
 let winTargetH = 0;
 let pendingDelta = null;
 let flushScheduled = false;
+let roamTimer = null;
+let roamAnchorX = null;
 
 function currentPos() {
   if (!posCache) posCache = win.getPosition();
   return posCache;
+}
+
+function setStablePosition(x, y) {
+  const w = winTargetW || win.getBounds().width;
+  const h = winTargetH || win.getBounds().height;
+  posCache = [x, y];
+  win.setBounds({ x, y, width: w, height: h });
+  // 非整数 DPI 下反复移动会扩大窗口，移动后把尺寸钉回原值。
+  win.setContentSize(w, h);
+}
+
+function cancelRoam() {
+  if (roamTimer === null) return;
+  clearInterval(roamTimer);
+  roamTimer = null;
+  if (win && !win.isDestroyed()) win.webContents.send('roam-ended');
+}
+
+function cursorNearPet() {
+  const point = screen.getCursorScreenPoint();
+  const bounds = win.getBounds();
+  const margin = 20;
+  return point.x >= bounds.x - margin && point.x <= bounds.x + bounds.width + margin
+    && point.y >= bounds.y - margin && point.y <= bounds.y + bounds.height + margin;
 }
 
 function flushMove() {
@@ -434,13 +465,13 @@ function flushMove() {
   const nx = Math.min(Math.max(x + dx, area.x), Math.max(area.x, area.x + area.width - w));
   const ny = Math.min(Math.max(y + dy, area.y), Math.max(area.y, area.y + area.height - h));
 
-  posCache = [nx, ny];
-  win.setBounds({ x: nx, y: ny, width: w, height: h });
-  // 关键：把尺寸钉回目标值，抵消上一步的取整膨胀
-  win.setContentSize(w, h);
+  setStablePosition(nx, ny);
+  roamAnchorX = nx;
 }
 
 ipcMain.on('move-window-by', (event, { dx, dy }) => {
+  if (!isPetSender(event)) return;
+  cancelRoam();
   // 把一帧内的多次 mousemove 合并成一次移动
   if (pendingDelta) {
     pendingDelta.dx += dx;
@@ -452,6 +483,51 @@ ipcMain.on('move-window-by', (event, { dx, dy }) => {
     flushScheduled = true;
     setImmediate(flushMove);
   }
+});
+
+ipcMain.on('request-roam', (event) => {
+  if (!isPetSender(event) || config.plugins?.roam !== true || roamTimer !== null
+    || !win.isVisible() || win.isMinimized() || pendingDelta
+    || (process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland')
+    || cursorNearPet()) return;
+
+  const activity = activityMonitor?.getState();
+  if (activity?.music.playing || activity?.app.category === 'video') return;
+
+  const [startX, y] = currentPos();
+  const bounds = win.getBounds();
+  const area = screen.getDisplayMatching(bounds).workArea;
+  const anchor = Math.min(Math.max(roamAnchorX ?? startX, area.x),
+    area.x + area.width - bounds.width);
+  const minX = Math.max(area.x, anchor - 180);
+  const maxX = Math.min(area.x + area.width - bounds.width, anchor + 180);
+  if (maxX - minX < 35) return;
+
+  const distance = 50 + Math.round(Math.random() * 45);
+  const direction = Math.random() < 0.5 ? -1 : 1;
+  const clamp = (value) => Math.min(Math.max(value, minX), maxX);
+  let targetX = clamp(startX + direction * distance);
+  if (Math.abs(targetX - startX) < 35) targetX = clamp(startX - direction * distance);
+  if (Math.abs(targetX - startX) < 35) return;
+
+  const durationMs = 1300;
+  const startedAt = performance.now();
+  win.webContents.send('roam-started', durationMs);
+  roamTimer = setInterval(() => {
+    if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) return cancelRoam();
+    if (cursorNearPet() || config.plugins?.roam !== true) return cancelRoam();
+    const progress = Math.min(1, (performance.now() - startedAt) / durationMs);
+    const eased = progress < 0.5
+      ? 2 * progress * progress
+      : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+    const nextX = Math.round(startX + (targetX - startX) * eased);
+    if (nextX !== currentPos()[0]) setStablePosition(nextX, y);
+    if (progress >= 1) cancelRoam();
+  }, 32);
+});
+
+ipcMain.on('cancel-roam', (event) => {
+  if (isPetSender(event)) cancelRoam();
 });
 
 app.whenReady().then(createWindow);

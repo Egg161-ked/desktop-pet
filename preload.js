@@ -11,6 +11,18 @@ contextBridge.exposeInMainWorld('petBridge', {
     ipcRenderer.on('activity-updated', listener);
     return () => ipcRenderer.removeListener('activity-updated', listener);
   },
+  onRoamStarted: (cb) => {
+    const listener = (_e, durationMs) => cb(durationMs);
+    ipcRenderer.on('roam-started', listener);
+    return () => ipcRenderer.removeListener('roam-started', listener);
+  },
+  onRoamEnded: (cb) => {
+    const listener = () => cb();
+    ipcRenderer.on('roam-ended', listener);
+    return () => ipcRenderer.removeListener('roam-ended', listener);
+  },
+  requestRoam: () => ipcRenderer.send('request-roam'),
+  cancelRoam: () => ipcRenderer.send('cancel-roam'),
   showContextMenu: () => ipcRenderer.send('show-context-menu'),
   moveWindowBy: (dx, dy) => ipcRenderer.send('move-window-by', { dx, dy }),
   setMousePassthrough: (ignore) => ipcRenderer.send('set-mouse-passthrough', !!ignore),

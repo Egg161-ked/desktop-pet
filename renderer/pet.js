@@ -8,7 +8,7 @@
   let feedReady = false;
   let feedBusy = false;
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const gestureClasses = ['reacting', 'wiggling', 'tilting', 'stretching', 'chewing'];
+  const gestureClasses = ['reacting', 'wiggling', 'tilting', 'stretching', 'chewing', 'hopping'];
   let gestureEndTimer = null;
 
   function playGesture(name, durationMs) {
@@ -98,6 +98,7 @@
   // ---- 暴露给所有插件使用的公共 API ----
   const petAPI = {
     say(text, durationMs = 3500) {
+      window.petBridge.cancelRoam();
       bubbleEl.textContent = text;
       bubbleEl.classList.add('show');
       clearTimeout(bubbleTimer);
@@ -123,6 +124,23 @@
     nextPose,
     react() {
       playGesture(Math.random() < 0.5 ? 'reacting' : 'wiggling', 650);
+    },
+    canRoam() {
+      return !reducedMotion && !document.hidden && !dragging && !feedReady && !feedBusy
+        && !bubbleEl.classList.contains('show')
+        && !gestureClasses.some((name) => petEl.classList.contains(name))
+        && !document.body.classList.contains('music-playing')
+        && document.body.dataset.activity !== 'video';
+    },
+    hop(durationMs) {
+      if (!this.canRoam()) return false;
+      playGesture('hopping', durationMs);
+      return true;
+    },
+    stopHop() {
+      if (!petEl.classList.contains('hopping')) return;
+      clearTimeout(gestureEndTimer);
+      petEl.classList.remove('hopping');
     },
     config: null, // 启动后由 main 注入
   };
@@ -205,6 +223,7 @@
 
   petEl.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
+    window.petBridge.cancelRoam();
     dragging = true;
     moved = false;
     lastX = e.screenX;
@@ -246,6 +265,7 @@
   function setFeedReady(ready) {
     if (feedReady === ready) return;
     feedReady = ready;
+    if (ready) window.petBridge.cancelRoam();
     renderFeedState();
   }
 

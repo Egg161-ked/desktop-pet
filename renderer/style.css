@@ -58,7 +58,11 @@ html, body {
   animation: chew 0.65s ease-in-out;
 }
 
-body.music-playing:not(.feeding) .pet:not(.dragging):not(.reacting):not(.wiggling):not(.tilting):not(.stretching):not(.chewing) {
+.pet.hopping {
+  animation: small-hops 1.3s ease-in-out;
+}
+
+body.music-playing:not(.feeding) .pet:not(.dragging):not(.reacting):not(.wiggling):not(.tilting):not(.stretching):not(.chewing):not(.hopping) {
   animation: music-sway 1.3s ease-in-out infinite;
 }
 
@@ -158,6 +162,13 @@ body.feeding .pose-mouth-open { opacity: 1; }
   0%, 100% { transform: translateX(-50%) scale(1); }
   22%, 66% { transform: translateX(-50%) scale(1.04, 0.94); }
   44%, 84% { transform: translateX(-50%) scale(0.98, 1.03); }
+}
+
+@keyframes small-hops {
+  0%, 48%, 100% { transform: translateX(-50%) translateY(0) scale(1); }
+  12%, 60% { transform: translateX(-50%) translateY(1px) scale(1.05, 0.94); }
+  28%, 77% { transform: translateX(-50%) translateY(-9px) rotate(-3deg) scale(0.98, 1.03); }
+  39%, 88% { transform: translateX(-50%) translateY(-2px) scale(1.02, 0.97); }
 }
 
 @keyframes music-sway {

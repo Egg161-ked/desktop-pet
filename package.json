@@ -18,11 +18,14 @@
     "productName": "DesktopPet",
     "files": [
       "main.js",
+      "assistant-core.js",
+      "assistant-preload.js",
       "system-activity.js",
       "preload.js",
       "config.json",
       "assets/**/*",
       "renderer/**/*",
+      "assistant/**/*",
       "plugins/**/*"
     ],
     "asarUnpack": [

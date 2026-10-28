@@ -145,6 +145,7 @@
     config: null, // 启动后由 main 注入
   };
   window.petAPI = petAPI;
+  window.petBridge.onAssistantSay((message) => petAPI.say(message, 6000));
 
   // ---- 拖拽(手动实现,避免和点击手势冲突) ----
   let lastX = 0, lastY = 0;

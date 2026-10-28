@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('petBridge', {
   getActivityState: () => ipcRenderer.invoke('get-activity-state'),
   onConfigUpdated: (cb) => ipcRenderer.on('config-updated', (_e, cfg) => cb(cfg)),
   onCursorPosition: (cb) => ipcRenderer.on('cursor-position', (_e, point) => cb(point)),
+  onAssistantSay: (cb) => ipcRenderer.on('assistant-say', (_e, message) => cb(message)),
   onActivityUpdated: (cb) => {
     const listener = (_e, state) => cb(state);
     ipcRenderer.on('activity-updated', listener);

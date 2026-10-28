@@ -3,6 +3,8 @@
   "alwaysOnTop": true,
   "autoStart": true,
   "idleIntervalMinutes": 6,
+  "assistantModel": "deepseek-r1:7b",
+  "assistantApps": [],
   "pluginDefaults": {
     "clock": true,
     "quotes": true,

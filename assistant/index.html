@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>和猫说话</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="avatar"><img src="../assets/pet_idle_center.png" alt="猫咪" /></div>
+    <div class="brand"><h1>和猫说话</h1><p>陪你聊天，也帮你做点小事</p></div>
+    <button id="reminders-toggle" class="icon-button" type="button" title="查看提醒" aria-label="查看提醒">◷<span id="reminder-count" class="count" hidden></span></button>
+    <button id="close" class="icon-button close-button" type="button" title="关闭" aria-label="关闭">×</button>
+  </header>
+
+  <div class="connection"><span id="connection-dot" class="connection-dot"></span><span id="connection-text">正在检查本地模型…</span><span class="connection-divider">·</span><span id="model-name">deepseek-r1:7b</span><button id="refresh" type="button" title="刷新连接状态">刷新</button></div>
+
+  <section id="reminders-panel" class="reminders-panel" hidden>
+    <div class="panel-title"><strong>待办提醒</strong><span>重启桌宠后仍会保留</span></div>
+    <div id="reminder-list" class="reminder-list"></div>
+  </section>
+
+  <main id="messages" class="messages" aria-live="polite">
+    <div class="welcome">
+      <div class="welcome-mark">✦</div>
+      <h2>今天想让我做什么？</h2>
+      <p>可以直接聊天，也可以让我设置提醒、打开常用应用或搜索网页。</p>
+      <div class="suggestions">
+        <button class="suggestion" type="button" data-prompt="25分钟后提醒我休息">25 分钟后提醒我休息 <span>↗</span></button>
+        <button class="suggestion" type="button" data-prompt="搜索桌面宠物灵感">搜索桌面宠物灵感 <span>↗</span></button>
+      </div>
+      <div class="app-heading">可以打开的应用</div>
+      <div id="app-chips" class="app-chips"></div>
+    </div>
+  </main>
+
+  <footer class="composer">
+    <div id="busy-status" class="busy-status" hidden><span class="spinner"></span><span id="busy-text">猫咪正在想…</span></div>
+    <form id="message-form">
+      <textarea id="message-input" rows="1" maxlength="400" placeholder="和猫说句话，或交代一件小事…" aria-label="输入消息"></textarea>
+      <div class="composer-actions">
+        <span>Enter 发送 · Shift+Enter 换行</span>
+        <button id="cancel" class="cancel-button" type="button" hidden>取消</button>
+        <button id="send" class="send-button" type="submit">发送 <span>↑</span></button>
+      </div>
+    </form>
+  </footer>
+
+  <script src="chat.js"></script>
+</body>
+</html>

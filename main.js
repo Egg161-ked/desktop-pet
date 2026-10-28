@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { createSystemActivity } = require('./system-activity');
+const { createAssistantCore } = require('./assistant-core');
 
 const USER_CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 const DEFAULT_CONFIG_PATH = path.join(__dirname, 'config.json');
@@ -56,6 +57,10 @@ const AUTOSTART_NAME = 'DesktopPet';
 const AUTOSTART_CMD = `"${process.execPath}"` + (app.isPackaged ? '' : ` "${__dirname}"`);
 
 let win;
+let assistantWin;
+let assistantCore;
+let activeAssistantRequest;
+const pendingPetNotices = [];
 let activityMonitor;
 let cursorPollTimer = null;
 const CAN_TRACK_CURSOR = process.platform !== 'linux' || process.env.XDG_SESSION_TYPE !== 'wayland';
@@ -118,6 +123,7 @@ function createWindow() {
     stopCursorPoll();
     activityMonitor?.stop();
     activityMonitor = null;
+    if (assistantWin && !assistantWin.isDestroyed()) assistantWin.close();
   });
 
   // 落到右下角。
@@ -143,6 +149,9 @@ function createWindow() {
   // 角色是位图素材，显示宽度由 CSS 变量 --pet-w 控制。
   // 这里把配置里的 size 通过 URL 查询参数传给页面，让它自己设置变量
   // （比 insertCSS 可靠：注入时机/优先级都不稳定）。
+  win.webContents.on('did-finish-load', () => {
+    while (pendingPetNotices.length) win.webContents.send('assistant-say', pendingPetNotices.shift());
+  });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'), {
     query: { size: String(config.size || 99) },
   });
@@ -158,6 +167,56 @@ function createWindow() {
     },
   });
   syncActivityMonitor();
+}
+
+function showPetNotice(message) {
+  const line = String(message).replace(/\s+/g, ' ').slice(0, 72);
+  if (!line) return;
+  if (win && !win.isDestroyed() && !win.webContents.isLoading()) {
+    win.webContents.send('assistant-say', line);
+  } else {
+    pendingPetNotices.push(line);
+  }
+}
+
+function openAssistantWindow() {
+  if (assistantWin && !assistantWin.isDestroyed()) {
+    assistantWin.show();
+    assistantWin.focus();
+    return;
+  }
+  if (!win || win.isDestroyed()) return;
+  const petBounds = win.getBounds();
+  const area = screen.getDisplayMatching(petBounds).workArea;
+  const width = 410;
+  const height = 570;
+  const x = Math.min(Math.max(petBounds.x - width - 12, area.x), area.x + area.width - width);
+  const y = Math.min(Math.max(petBounds.y + petBounds.height - height, area.y), area.y + area.height - height);
+  assistantWin = new BrowserWindow({
+    width, height, x, y,
+    minWidth: 350,
+    minHeight: 450,
+    show: false,
+    title: '和猫说话',
+    backgroundColor: '#F7F3ED',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'assistant-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  assistantWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  assistantWin.webContents.on('will-navigate', (event) => event.preventDefault());
+  assistantWin.once('ready-to-show', () => {
+    if (assistantWin && !assistantWin.isDestroyed()) assistantWin.show();
+  });
+  assistantWin.on('closed', () => {
+    activeAssistantRequest?.abort('cancel');
+    assistantWin = null;
+  });
+  assistantWin.loadFile(path.join(__dirname, 'assistant', 'index.html'));
 }
 
 function syncActivityMonitor() {
@@ -218,6 +277,8 @@ function buildContextMenu() {
   }
 
   const template = [
+    { label: '和猫说话', click: openAssistantWindow },
+    { type: 'separator' },
     {
       label: '插件开关',
       submenu: pluginKeys.map((k) => ({
@@ -269,6 +330,72 @@ function buildContextMenu() {
 ipcMain.handle('get-config', () => config);
 ipcMain.handle('get-activity-state', (event) =>
   isPetSender(event) && activityMonitor ? activityMonitor.getState() : null);
+
+function isAssistantSender(event) {
+  return assistantWin && !assistantWin.isDestroyed() && event.sender === assistantWin.webContents;
+}
+
+function sendAssistantEvent(channel, payload) {
+  if (assistantWin && !assistantWin.isDestroyed()) assistantWin.webContents.send(channel, payload);
+}
+
+ipcMain.handle('assistant-get-state', async (event) => {
+  if (!isAssistantSender(event) || !assistantCore) return null;
+  return {
+    apps: assistantCore.getApps(),
+    reminders: assistantCore.listReminders(),
+    model: config.assistantModel || 'deepseek-r1:7b',
+    online: await assistantCore.ollamaOnline(),
+  };
+});
+
+ipcMain.handle('assistant-send', async (event, input) => {
+  if (!isAssistantSender(event) || !assistantCore) return { ok: false, error: '聊天窗已关闭。' };
+  if (activeAssistantRequest) return { ok: false, error: '上一条消息还在处理。' };
+  if (typeof input !== 'string' || !input.trim() || input.length > 400) {
+    return { ok: false, error: '请输入不超过 400 字的消息。' };
+  }
+
+  const controller = new AbortController();
+  activeAssistantRequest = controller;
+  const timeout = setTimeout(() => controller.abort('timeout'), 90_000);
+  try {
+    const result = await assistantCore.handleMessage(input, {
+      context: activityMonitor?.getState(),
+      signal: controller.signal,
+      onPartial: (text) => sendAssistantEvent('assistant-progress', { text }),
+      onStatus: (text) => sendAssistantEvent('assistant-progress', { status: text }),
+    });
+    if (controller.signal.aborted) throw new Error('cancelled');
+    const bubble = result.reply.length > 60 ? '我答好啦，来聊天窗看。' : result.reply;
+    showPetNotice(bubble);
+    return { ok: true, ...result, reminders: assistantCore.listReminders() };
+  } catch (error) {
+    if (controller.signal.aborted) {
+      return { ok: false, error: controller.signal.reason === 'timeout'
+        ? '等候模型超时，请稍后再试。' : '已取消。' };
+    }
+    console.warn('[pet] 聊天处理失败:', error);
+    return { ok: false, error: error.message || '处理失败，请稍后再试。' };
+  } finally {
+    clearTimeout(timeout);
+    activeAssistantRequest = null;
+  }
+});
+
+ipcMain.on('assistant-cancel', (event) => {
+  if (isAssistantSender(event)) activeAssistantRequest?.abort('cancel');
+});
+
+ipcMain.handle('assistant-cancel-reminder', (event, id) => {
+  if (!isAssistantSender(event) || !assistantCore || typeof id !== 'string') return null;
+  const removed = assistantCore.cancelReminder(id);
+  return { removed, reminders: assistantCore.listReminders() };
+});
+
+ipcMain.on('assistant-close', (event) => {
+  if (isAssistantSender(event)) assistantWin.close();
+});
 
 function isWithinDir(dir, target) {
   const relative = path.relative(dir, target);
@@ -530,9 +657,27 @@ ipcMain.on('cancel-roam', (event) => {
   if (isPetSender(event)) cancelRoam();
 });
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  assistantCore = createAssistantCore({
+    userDataPath: app.getPath('userData'),
+    getConfig: () => config,
+    openPath: (file) => shell.openPath(file),
+    openExternal: (url) => shell.openExternal(url),
+    onReminder: (item) => {
+      const message = `提醒你：${item.text}`;
+      showPetNotice(message);
+      sendAssistantEvent('assistant-notice', { text: message });
+      sendAssistantEvent('assistant-reminders-updated', assistantCore.listReminders());
+    },
+  });
+  createWindow();
+});
 
-app.on('before-quit', () => activityMonitor?.stop());
+app.on('before-quit', () => {
+  activeAssistantRequest?.abort('cancel');
+  assistantCore?.stop();
+  activityMonitor?.stop();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
